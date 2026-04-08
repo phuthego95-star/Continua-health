@@ -28,6 +28,7 @@ export function Sidebar() {
 
   const patientNav = [
     { name: 'Dashboard', href: '/patient', icon: LayoutDashboard },
+    { name: 'Marketplace', href: '/patient/marketplace', icon: Archive },
     { name: 'Vitals', href: '/patient/vitals', icon: Activity },
     { name: 'Medications', href: '/patient/medications', icon: Pill },
     { name: 'Labs', href: '/patient/labs', icon: FlaskConical },

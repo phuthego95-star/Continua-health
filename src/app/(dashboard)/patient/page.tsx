@@ -1,25 +1,56 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useAuthStore } from '@/store/useAuthStore';
-import { useDataStore } from '@/store/useDataStore';
+import { createClient } from '@/lib/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Activity, Pill, CalendarDays, FlaskConical, MessageSquare } from 'lucide-react';
+import { Activity, Pill, CalendarDays, FlaskConical, MessageSquare, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { HealthTips } from '@/components/dashboard/HealthTips';
 
 export default function PatientDashboard() {
-  const { user } = useAuthStore();
-  const { patientData } = useDataStore();
+  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [vitals, setVitals] = useState<any[]>([]);
+  const [medications, setMedications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [dateStr, setDateStr] = useState('');
 
-  // Render date client-side only to avoid hydration mismatch
+  const supabase = createClient();
+
   useEffect(() => {
     setDateStr(new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
+
+    async function fetchData() {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        setUser(authUser);
+        
+        // Parallel fetch for speed
+        const [profileRes, vitalsRes, medsRes] = await Promise.all([
+          supabase.from('profiles').select('*').eq('id', authUser.id).single(),
+          supabase.from('vitals').select('*').eq('patient_id', authUser.id).order('recorded_at', { ascending: false }).limit(1),
+          supabase.from('medications').select('*').eq('patient_id', authUser.id)
+        ]);
+
+        if (profileRes.data) setProfile(profileRes.data);
+        if (vitalsRes.data) setVitals(vitalsRes.data);
+        if (medsRes.data) setMedications(medsRes.data);
+      }
+      setLoading(false);
+    }
+    fetchData();
   }, []);
 
-  const latestVital = patientData.vitals[0];
-  const activeMeds = patientData.medications.filter(m => m.status === 'active');
+  if (loading) return (
+    <div className="h-full w-full flex flex-col items-center justify-center space-y-4 pt-40">
+      <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
+      <p className="text-muted-foreground text-sm animate-pulse">Syncing clinical records...</p>
+    </div>
+  );
+
+  const latestVital = vitals[0];
+  const activeMeds = medications.filter(m => m.status === 'active' || !m.status); // Default to active if status col missing
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -30,18 +61,20 @@ export default function PatientDashboard() {
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
-            <p className="text-sm font-medium">{user?.first_name} {user?.last_name}</p>
-            <p className="text-xs text-muted-foreground">Patient</p>
+            <p className="text-sm font-medium">{profile?.first_name} {profile?.last_name}</p>
+            <p className="text-xs text-muted-foreground">Patient ID: {user?.id.slice(0, 8)}</p>
           </div>
-          <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary">
-            {user?.first_name?.[0]}{user?.last_name?.[0]}
-          </div>
+          <Link href="/patient/profile">
+            <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary cursor-pointer hover:bg-primary/30 transition-colors">
+                {profile?.first_name?.[0]}{profile?.last_name?.[0]}
+            </div>
+          </Link>
         </div>
       </header>
 
       <main className="flex-1 p-6 lg:p-8 bg-background space-y-8">
         <div className="flex items-center justify-between">
-          <h2 className="text-3xl font-semibold tracking-tight">Welcome back, {user?.first_name || 'John'}</h2>
+          <h2 className="text-3xl font-semibold tracking-tight">Welcome back, {profile?.first_name || 'Patient'}</h2>
           <Button>Book Appointment</Button>
         </div>
 
@@ -54,8 +87,8 @@ export default function PatientDashboard() {
             <CardContent>
               {latestVital ? (
                 <>
-                  <div className="text-2xl font-bold">{latestVital.value} <span className="text-sm font-normal text-muted-foreground">{latestVital.unit}</span></div>
-                  <p className="text-xs text-muted-foreground">{latestVital.type} logged recently</p>
+                  <div className="text-2xl font-bold">{latestVital.value_numeric} <span className="text-sm font-normal text-muted-foreground">{latestVital.unit}</span></div>
+                  <p className="text-xs text-muted-foreground">{latestVital.type} logged on {new Date(latestVital.recorded_at).toLocaleDateString()}</p>
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">No vitals logged yet.</p>
@@ -70,7 +103,7 @@ export default function PatientDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{activeMeds.length} Prescriptions</div>
-              <p className="text-xs text-muted-foreground">Adherence check needed</p>
+              <p className="text-xs text-muted-foreground">All synced from Cloud Labs</p>
             </CardContent>
           </Card>
 
@@ -96,6 +129,8 @@ export default function PatientDashboard() {
             </CardContent>
           </Card>
         </div>
+
+        <HealthTips />
 
         <div className="p-6 mt-8 rounded-xl bg-accent text-accent-foreground flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>

@@ -2,38 +2,57 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@/store/useAuthStore";
+import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Activity, User, Stethoscope, FlaskConical, ShieldCheck } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Activity, Mail, Lock, Loader2, User, Stethoscope, FlaskConical, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
 type Role = 'patient' | 'clinician' | 'pharmacist' | 'admin';
 
-const ROLES: { id: Role; label: string; icon: React.ElementType; name: string; email: string }[] = [
-  { id: 'patient',    label: 'Patient',       icon: User,          name: 'John Doe',           email: 'john@example.com' },
-  { id: 'clinician',  label: 'Clinician',     icon: Stethoscope,   name: 'Dr. Sarah Smith',    email: 'dr.smith@clinic.com' },
-  { id: 'pharmacist', label: 'Pharmacist',    icon: FlaskConical,  name: 'Pharm. Alex Green',  email: 'alex.green@pharmacy.com' },
-  { id: 'admin',      label: 'System Admin',  icon: ShieldCheck,   name: 'SysAdmin Operations',email: 'admin@continua.health' },
+const ROLES: { id: Role; label: string; icon: React.ElementType; email: string }[] = [
+  { id: 'patient',    label: 'Patient',       icon: User,          email: 'john@example.com' },
+  { id: 'clinician',  label: 'Clinician',     icon: Stethoscope,   email: 'dr.smith@clinic.com' },
+  { id: 'pharmacist', label: 'Pharmacist',    icon: FlaskConical,  email: 'alex.green@pharmacy.com' },
+  { id: 'admin',      label: 'System Admin',  icon: ShieldCheck,   email: 'admin@continua.health' },
 ];
 
 export default function LoginPage() {
-  const login = useAuthStore((state) => state.login);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [roleSelection, setRoleSelection] = useState<Role>('patient');
+
   const router = useRouter();
-  const [role, setRole] = useState<Role>('patient');
+  const supabase = createClient();
 
-  const selected = ROLES.find(r => r.id === role)!;
-
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    login(role, selected.name);
-    const routes: Record<Role, string> = {
-      patient: '/patient',
-      clinician: '/clinician',
-      pharmacist: '/pharmacist',
-      admin: '/admin',
-    };
-    router.push(routes[role]);
+    setLoading(true);
+    setError(null);
+
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (signInError) {
+      setError(signInError.message);
+      setLoading(false);
+      return;
+    }
+
+    // Redirect based on the user's role in their profile
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', data.user.id)
+      .single();
+
+    const role = profile?.role || 'patient';
+    router.push(`/${role}`);
   };
 
   return (
@@ -46,60 +65,76 @@ export default function LoginPage() {
             </div>
           </div>
           <CardTitle className="text-2xl font-bold tracking-tight">Continua Health</CardTitle>
-          <CardDescription>Global Chronic Disease Management Platform</CardDescription>
+          <CardDescription>Secure Gateway to Global Care</CardDescription>
         </CardHeader>
 
         <CardContent className="bg-white px-8 pb-4">
-          <form onSubmit={handleLogin} className="space-y-5">
-            {/* Role selector */}
+          <form onSubmit={handleLogin} className="space-y-4">
+            {error && (
+              <div className="p-3 text-xs bg-destructive/10 text-destructive rounded-lg border border-destructive/20 text-center">
+                {error}
+              </div>
+            )}
+
             <div className="space-y-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Select Your Portal</span>
-              <div className="grid grid-cols-2 gap-2 mt-1">
-                {ROLES.map((r) => {
-                  const Icon = r.icon;
-                  const isSelected = role === r.id;
-                  return (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => setRole(r.id)}
-                      className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
-                        isSelected
-                          ? 'border-sky-500 bg-sky-50 text-sky-700 shadow-sm'
-                          : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      <Icon className="h-4 w-4 shrink-0" />
-                      {r.label}
-                    </button>
-                  );
-                })}
+              <label className="text-xs font-semibold text-slate-400 uppercase ml-1">Email Address</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                <Input 
+                  type="email" 
+                  placeholder="name@example.com" 
+                  className="pl-10 h-11 rounded-xl"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required 
+                />
               </div>
             </div>
 
-            {/* Auto-filled credentials display */}
-            <div className="rounded-xl bg-slate-50 border border-slate-100 p-4 space-y-1">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Email</span>
-                <span className="font-mono text-slate-600 text-xs">{selected.email}</span>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center ml-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase">Password</label>
+                <Link href="#" className="text-[10px] text-sky-600 hover:underline">Forgot password?</Link>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Password</span>
-                <span className="font-mono text-slate-600 text-xs">••••••••••</span>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                <Input 
+                  type="password" 
+                  placeholder="••••••••" 
+                  className="pl-10 h-11 rounded-xl"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required 
+                />
               </div>
             </div>
 
-            <Button type="submit" className="w-full h-11 rounded-xl text-base font-semibold gap-2 shadow-md">
-              <selected.icon className="h-4 w-4" />
-              Enter as {selected.label}
+            <Button type="submit" className="w-full h-11 rounded-xl text-base font-semibold mt-4 shadow-md bg-sky-600 hover:bg-sky-700" disabled={loading}>
+              {loading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : "Sign In to Portal"}
             </Button>
           </form>
+
+          <div className="mt-8 pt-4 border-t border-slate-100">
+             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-3 text-center">Demo Access Points</span>
+             <div className="grid grid-cols-2 gap-2">
+               {ROLES.map((r) => (
+                 <button 
+                  key={r.id} 
+                  onClick={() => { setEmail(r.email); setPassword('password123'); }}
+                  className="text-[10px] flex items-center gap-2 p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-slate-500"
+                 >
+                   <r.icon className="h-3 w-3" />
+                   {r.label}
+                 </button>
+               ))}
+             </div>
+          </div>
         </CardContent>
 
         <CardFooter className="bg-white flex flex-col border-t py-4 px-8 text-center text-sm">
           <p className="text-slate-400">
-            {"Don't have an account? "}
-            <Link href="/register" className="text-sky-600 hover:underline font-medium">Apply for access</Link>
+            {"Access required? "}
+            <Link href="/register" className="text-sky-600 hover:underline font-medium">Create health profile</Link>
           </p>
         </CardFooter>
       </Card>
